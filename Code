@@ -1,0 +1,178 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[ ]:
+
+
+#importing datasets
+
+
+# In[1]:
+
+
+import pandas as pd
+
+dataset = pd.read_csv('absa_train1.csv')
+dataset.head(5)
+
+
+# In[2]:
+
+
+import spacy
+nlp = spacy.load("en_core_web_sm")
+
+dataset.review = dataset.review.str.lower()
+aspect_terms = []
+for review in nlp.pipe(dataset.review):
+    chunks = [(chunk.root.text) for chunk in review.noun_chunks if chunk.root.pos_ == 'NOUN']
+    aspect_terms.append(' '.join(chunks))
+dataset['aspect_terms'] = aspect_terms
+dataset.head(10)
+
+
+# In[ ]:
+
+
+#importing keras modules
+
+
+# In[3]:
+
+
+from keras.models import load_model
+from keras.models import Sequential
+from keras.layers import Dense, Activation
+
+aspect_categories_model = Sequential()
+aspect_categories_model.add(Dense(512, input_shape=(6000,), activation='relu'))
+aspect_categories_model.add(Dense(41, activation='softmax'))
+aspect_categories_model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+
+# In[4]:
+
+
+from keras.preprocessing.text import Tokenizer
+
+vocab_size = 6000 # We set a maximum size for the vocabulary
+tokenizer = Tokenizer(num_words=vocab_size)
+tokenizer.fit_on_texts(dataset.review)
+aspect_tokenized = pd.DataFrame(tokenizer.texts_to_matrix(dataset.aspect_terms))
+
+
+# In[5]:
+
+
+from sklearn.preprocessing import LabelEncoder
+from keras.utils import to_categorical
+
+label_encoder = LabelEncoder()
+integer_category = label_encoder.fit_transform(dataset.aspect_category)
+dummy_category = to_categorical(integer_category)
+
+
+# In[6]:
+
+
+len(dummy_category)
+
+
+# In[7]:
+
+
+aspect_categories_model.fit(aspect_tokenized, dummy_category, epochs=13, batch_size=23)
+new_review = "This italian place is nice and cosy"
+
+chunks = [(chunk.root.text) for chunk in nlp(new_review).noun_chunks if chunk.root.pos_ == 'NOUN']
+new_review_aspect_terms = ' '.join(chunks)
+new_review_aspect_tokenized = tokenizer.texts_to_matrix([new_review_aspect_terms])
+
+new_review_category = label_encoder.inverse_transform(aspect_categories_model.predict_classes(new_review_aspect_tokenized))
+print(new_review_category)
+
+sentiment_terms = []
+for review in nlp.pipe(dataset['review']):
+        if review.is_parsed:
+            sentiment_terms.append(' '.join([token.lemma_ for token in review if (not token.is_stop and not token.is_punct and (token.pos_ == "ADJ" or token.pos_ == "VERB"))]))
+        else:
+            sentiment_terms.append('')  
+dataset['sentiment_terms'] = sentiment_terms
+dataset.head(10)
+
+
+# In[8]:
+
+
+#NEURAL NETWORK IMPLEMENTATION
+
+
+# In[9]:
+
+
+sentiment_model = Sequential()
+sentiment_model.add(Dense(512, input_shape=(6000,), activation='relu'))
+sentiment_model.add(Dense(4, activation='softmax'))
+sentiment_model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+sentiment_tokenized = pd.DataFrame(tokenizer.texts_to_matrix(dataset.sentiment_terms))
+label_encoder_2 = LabelEncoder()
+integer_sentiment = label_encoder_2.fit_transform(dataset.sentiment)
+dummy_sentiment = to_categorical(integer_sentiment)
+sentiment_model.fit(sentiment_tokenized, dummy_sentiment, epochs=13,batch_size=130)
+
+new_review = "This italian place is nice and cosy"
+
+
+# In[10]:
+
+
+chunks = [(chunk.root.text) for chunk in nlp(new_review).noun_chunks if chunk.root.pos_ == 'NOUN']
+new_review_aspect_terms = ' '.join(chunks)
+new_review_aspect_tokenized = tokenizer.texts_to_matrix([new_review_aspect_terms])
+
+new_review_category = label_encoder_2.inverse_transform(sentiment_model.predict_classes(new_review_aspect_tokenized))
+print(new_review_category)
+
+
+# In[11]:
+
+
+#review input
+print("enter the review")
+test_reviews = input().split(",")
+
+
+# In[12]:
+
+
+# Aspect preprocessing
+test_reviews = [review.lower() for review in test_reviews]
+test_aspect_terms = []
+for review in nlp.pipe(test_reviews):
+    chunks = [(chunk.root.text) for chunk in review.noun_chunks if chunk.root.pos_ == 'NOUN']
+    test_aspect_terms.append(' '.join(chunks))
+test_aspect_terms = pd.DataFrame(tokenizer.texts_to_matrix(test_aspect_terms))
+
+
+# In[13]:
+
+
+# Sentiment preprocessing
+test_sentiment_terms = []
+for review in nlp.pipe(test_reviews):
+        if review.is_parsed:
+            test_sentiment_terms.append(' '.join([token.lemma_ for token in review if (not token.is_stop and not token.is_punct and (token.pos_ == "ADJ" or token.pos_ == "VERB"))]))
+        else:
+            test_sentiment_terms.append('') 
+test_sentiment_terms = pd.DataFrame(tokenizer.texts_to_matrix(test_sentiment_terms))
+
+
+# In[14]:
+
+
+# Models output
+test_aspect_categories = label_encoder.inverse_transform(aspect_categories_model.predict_classes(test_aspect_terms))
+test_sentiment = label_encoder_2.inverse_transform(sentiment_model.predict_classes(test_sentiment_terms))
+for i in range(len(test_reviews)):
+    print("Review " + str(i+1) + " part is expressing a  " + test_sentiment[i] + " opinion about " + test_aspect_categories[i])
